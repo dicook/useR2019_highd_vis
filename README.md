@@ -30,4 +30,4 @@ Materials are designed for an intermediate audience, users who are familiar
 with R, basic visualisation and tidyverse tools, and who would like to
 improve their knowledge about data visualisation. 
 
-*Looking forward to meeting you all! And excited to be at useR! 2019*
+*Looking forward to meeting you all! And excited to be at useR! 2019.*
