@@ -3,7 +3,7 @@
 
 The workshop is interactive, bring your laptop set up with the **latest versions of R (>3.5) and RStudio, and these R packages ggplot2 (and tidyverse), nullabor, GGally, plotly, tourr and spinifex** to work along with theinstructor, and do challenge exercises.
 
-**If you have signed up for this tutorial it will be helpful to download a copy of these notes ahead of time. I aim to have them complete and available by Wed Jul 3. Please download them between this date and the tutorial start (Tue Jul 9).**
+If you have signed up for this tutorial it will be helpful to **download a copy of these notes ahead of time. I aim to have them complete and available by Wed Jul 3. Please download them between this date and the tutorial start (Tue Jul 9).**
 
 This is the planned structure for the tutorial:
 
