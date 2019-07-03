@@ -1,7 +1,17 @@
 # Visualising high-dimensional data 
 ## Tutorial notes for useR! 2019
 
-The workshop is interactive, bring your laptop set up with the **latest versions of R (>3.5) and RStudio, and these R packages ggplot2 (and tidyverse), nullabor, GGally, plotly, tourr and spinifex** to work along with theinstructor, and do challenge exercises.
+The workshop is interactive, bring your laptop set up with the **latest versions of R (>3.5) and RStudio**, and these R packages:
+
+```
+install.packages(c("knitr", "tidyverse", "here", "nullabor", "forecast", "readxl", "GGally", "broom", "plotly", "tourr", "spinifex", "geozoo", "mvtnorm", "randomForest", "RColorBrewer"))
+```
+
+Also install:
+
+```
+remotes::install_github("wmurphyrd/fiftystater")
+```
 
 If you have signed up for this tutorial it will be helpful to **download a copy of these notes ahead of time. I aim to have them complete and available by Wed Jul 3. Please download them between this date and the tutorial start (Tue Jul 9).**
 
