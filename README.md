@@ -15,12 +15,12 @@ remotes::install_github("wmurphyrd/fiftystater")
 
 If you have signed up for this tutorial it will be helpful to **download a copy of these materials ahead of time**, by downloading the `tutorial_highd_vis.zip` file above. Unzip the file into a project folder, to work through during the tutorial. It contains these files:
 
-- data/TB_notifications_2019-07-01.csv
-- data/tb_burden.rda
-- data/TB_data_dictionary_2019-07-01.csv
-- data/IncRate.xlsx
-- tutorial_highd_vis.Rproj
-- tutorial_highd_vis.R
+- `data/TB_notifications_2019-07-01.csv`
+- `data/tb_burden.rda`
+- `data/TB_data_dictionary_2019-07-01.csv`
+- `data/IncRate.xlsx`
+- `tutorial_highd_vis.Rproj`
+- `tutorial_highd_vis.R`
 
 **Please have these on your computer by tutorial start (Tue Jul 9).**
 
