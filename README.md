@@ -1,6 +1,11 @@
 # Visualising high-dimensional data 
 ## Tutorial notes for useR! 2019
 
+To access the interactive tutorials online, it is split into two parts:
+
+- https://ebsmonash.shinyapps.io/tutorial_highd_vis_part1/
+- https://ebsmonash.shinyapps.io/tutorial_highd_vis_part2/
+
 The workshop is interactive, bring your laptop set up with the **latest versions of R (>3.5) and RStudio**, and these R packages:
 
 ```
