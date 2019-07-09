@@ -209,7 +209,7 @@ ggplot(incd_map) +
 
 ## ----compute p-value, echo=TRUE------------------------------------------
 # Compute the p-value associated with this lineup, and the observer responses
-pvisual(20, 150, 12)
+pvisual(7, 92, 12)
 
 ## ----outbreak check, echo=TRUE-------------------------------------------
 # This is a potentially really tough example to generate null plots for. 
@@ -361,11 +361,11 @@ animate_xy(flea[,1:6], axes = "off")
 
 
 ## ----make a 5D cube, eval=FALSE, echo=TRUE-------------------------------
-cube <- cube.face(p = 5)
+cube <- cube.face(p = 4)
 animate_xy(cube$points)
 
 ## ----make a 5D sphere, eval=FALSE, echo=TRUE-----------------------------
-sphere <- data.frame(sphere.hollow(p = 5)$points)
+sphere <- data.frame(sphere.hollow(p = 4)$points)
 animate_xy(sphere)
 
 ## ----make a 5D simplex, eval=FALSE, echo=TRUE----------------------------

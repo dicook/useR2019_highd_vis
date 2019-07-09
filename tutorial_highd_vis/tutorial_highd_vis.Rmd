@@ -1,0 +1,1292 @@
+---
+title: "useR! 2019 Tutorial: Visualising high-dimensional data"
+author: "Professor Di Cook, Monash University, Australia"
+output: 
+  learnr::tutorial:
+    css: "css/logo.css"
+runtime: shiny_prerendered
+---
+
+```{r setup, include=FALSE}
+library(learnr)
+knitr::opts_chunk$set(echo = FALSE,   
+                      message = FALSE,
+                      warning = FALSE,
+                      collapse = TRUE,
+                      out.width="100%", 
+                      fig.height = 4,
+                      fig.width = 8,
+                      fig.align = "center",
+                      cache = FALSE)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r load libraries}
+library(knitr)
+library(tidyverse)
+library(here)
+library(nullabor)
+library(forecast)
+library(readxl)
+library(GGally)
+library(broom)
+library(plotly)
+library(RColorBrewer)
+library(tourr)
+library(spinifex)
+library(geozoo)
+library(mvtnorm)
+library(randomForest)
+```
+
+```{r install and load a libary to make nicer maps of the USA}
+# This package makes a nicer representation of the USA state map
+#  with Hawaii and Alaska included
+# remotes::install_github("wmurphyrd/fiftystater")
+library(fiftystater)
+```
+
+```{r}
+# Extra libraries to make my notes more fun
+library(magick)
+# remotes::install_github("emitanaka/anicon")
+library(anicon)
+# remotes::install_github("sctyner/memer")
+library(memer)
+```
+
+
+## Welcome
+
+<img src="images/Hello-Di.png" style="width: 70%" />
+
+`r emo::ji("wave")` I'm a professor in Econometrics and Business Statistics at Monash University in Melbourne, Australia. What's special about where I come from? Fairy penguins come in from the ocean to their burrows in a dock in the middle of the city, every day at dusk, and you can go watch them. You might even find one run/hop in front of you trying to get to their nest. 
+
+<img src="images/penguin.JPG" style="width: 30%" /> <img src="images/stkilda.JPG" style="width: 57%" />
+
+
+### `r icon::fa("terminal")` YOUR TURN
+
+Introduce yourself to at least two people near you, and tell them something fun about yourself. You've got TWO minutes to meet as many people around you as you can!
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **These neighbours are your support buddies for the next three hours.** 
+
+### Meet your tutors
+
+`r emo::ji("wave")` Christophe and Rémi!
+
+`r icon::fa("user-plus")` Christophe is an econometrician at TSE and teaches data visualization for low-dimensional data. 
+
+`r icon::fa("user-plus")` Rémi is a research engineer at INRA (National institut for agronomic research), and uses R in his job almost every day.
+
+### Getting started
+
+
+### Outline
+
+- Review basic visualisation and inference with graphics
+- Plotting multiple dimensions in a single static plot, adding interaction
+- Using dynamic plots (tours) to examine models in the data space, beyond 3D
+
+### If you haven't done this yet 
+
+- Download the materials from https://github.com/dicook/useR2019_highd_vis
+- Do the package installs 
+
+```
+install.packages(c("knitr", "tidyverse", "here", "nullabor", "forecast", "readxl", "GGally", "broom", "plotly", "tourr", "spinifex", "geozoo", "mvtnorm", "randomForest", "RColorBrewer"))
+remotes::install_github("wmurphyrd/fiftystater")
+```
+
+<br>
+<br>
+
+`r nia("Does your setup look like this?", grow=2, animate="falling", size="2", colour="green")`
+
+<img src="images/RStudio.png" style="width: 100%" />
+
+## 1a. Basic visualisation
+
+
+### Read the data
+
+```{r section header 1, eval=FALSE}
+# *******************
+# Basic visualisation
+# *******************
+```
+
+We need some data! We will use the tuberculosis incidence data `TB_notifications_2019-07-01.csv` as downloaded from the [World Health Organization](https://www.who.int/tb/country/data/download/en/). **The data is already in the collection of files you have pulled from my web site, in the `data` directory.** There are a few tidying steps needed:
+
+- Select just the counts for the positive tests
+- Gather to long form, to unpack sex and age as separate variables
+- Filter to data from France
+
+```{r read and wrangle TB data}
+tb <- read_csv("data/TB_notifications_2019-07-01.csv")
+tb <- tb %>% select(country, iso3, g_whoregion, year, contains("new_sp_")) %>%
+  gather("stuff", "count", new_sp_m04:new_sp_fu) %>%
+  separate(stuff, c("stuff1", "stuff2", "sex_age"), split="_") %>%
+  select(-stuff1, -stuff2) %>%
+  mutate(sex = str_sub(sex_age, 1, 1), 
+         age = str_sub(sex_age, 2, str_length(sex_age))) %>%
+  select(-sex_age) 
+tb_fr <- tb %>% filter(country == "France") %>%
+  filter(!(age %in% c("u", "04", "014", "514")))
+```
+
+### Plotting TB incidence in France by sex and age
+
+```{r starting to plot, echo=TRUE, fig.height=3}
+ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity") + 
+  facet_wrap(~age, ncol=6)
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- What do you learn about tuberculosis incidence in France from this plot?
+- Give three changes to the plot that would improve it. 
+
+```{r eval=FALSE}
+- Incidence is declining, in all age groups, except possibly 15-24
+- Much higher incidence for over 65s
+- There appears to be a structural change around 2008. Either a recording change or a policy change?
+- Missing information for 1998
+- 
+- Cannot compare counts for male/female using stacked bars, maybe fill to 100% to focus on proportion
+- Colour scheme is not color blind proof, switch to colorbrewer Dark2 palette
+- Axis labels, and tick marks
+```
+
+### Grammar of graphics
+
+We'll use [ggplot2](https://ggplot2.tidyverse.org) for making plots. It uses a grammar for making plots, which effectively is a functional mapping from tidy data to a visual representation. *(Thanks to Hadley Wickham, and the development team at RStudio, and Lee Wilkinson for the original grammar of graphics.)*
+
+<img src="images/ggplot.png" style="width: 20%" />
+
+[Why use ggplot2?](https://github.com/tidyverse/ggplot2/wiki/Why-use-ggplot2)
+
+The grammar of graphics provides a tight connection between data and statistics, in order to do inference with data plots. 
+
+### First a few perception fixes
+
+```{r colour and axes fixes, echo=TRUE, fig.height=3}
+# This makes shorter tick mark labels, and color blind proof scale
+ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity") + 
+  facet_wrap(~age, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10"))
+```
+
+### Compare males and females
+
+```{r compare proportions of males/females, echo=TRUE, fig.height=3}
+# Fill the bars, note the small change to the code
+ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity", position="fill") + 
+  facet_wrap(~age, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10"))
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- What do we learn about the data that is different from the previous plot?
+- What is easier, what is harder or impossible to learn from this arrangement?
+
+```{r eval=FALSE}
+- Focus is now on proportions of male and female each year, within age group
+- Proportions are similar across year 
+- Roughly equal proportions at young and old age groups, more male incidence in middle years
+```
+
+### Alternative ways to compare males and females
+
+```{r side-by-side bars of males/females, fig.height=3, eval=FALSE, echo=FALSE}
+# This code does something strange to the axis tick marks
+# We will skip it for now
+#ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+#  geom_bar(stat="identity", position="dodge") + 
+#  facet_wrap(~age, ncol=6) +
+#  scale_fill_brewer("", palette="Dark2") +
+#  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10"))
+```
+
+```{r compare counts of males/females, echo=TRUE}
+# Make separate plots for males and females, focus on counts by category
+ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity") + 
+  facet_wrap(sex~age, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10"))
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- What do we learn about the data that is different from the previous plot?
+- What is easier, what is harder or impossible to learn from this arrangement?
+
+```{r eval=FALSE}
+- Counts are generally higher for males than females 
+- There are very few female cases in the middle years
+- Perhaps something of a older male outbreak in 2007-8, and possibly a young female outbreak in the same years
+```
+
+### Make a pie
+
+```{r rose plot of males/females, echo=TRUE}
+# How to make a pie instead of a barchart - not straight forward
+ggplot(tb_fr, aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity") + 
+  facet_wrap(sex~age, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10")) +
+  coord_polar()
+```
+
+Not a pie, a [rose plot](https://datavizcatalogue.com/methods/nightingale_rose_chart.html)!
+
+```{r stacked barchart of males/females, echo=TRUE, fig.height=8}
+# Step 1 to make the pie
+ggplot(tb_fr, aes(x = 1, y = count, fill = factor(year))) +
+  geom_bar(stat="identity", position="fill") + 
+  facet_wrap(sex~age, ncol=6) +
+  scale_fill_viridis_d("", option="inferno") +
+  theme(legend.position="bottom")
+```
+
+```{r pie chart of males/females, echo=TRUE, fig.height=8}
+# Now we have a pie, note the mapping of variables
+# and the modification to the coord_polar
+ggplot(tb_fr, aes(x = 1, y = count, fill = factor(year))) +
+  geom_bar(stat="identity", position="fill") + 
+  facet_wrap(sex~age, ncol=6) +
+  scale_fill_viridis_d("", option="inferno") +
+  theme(legend.position="bottom") +
+  coord_polar(theta="y")
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- What are the pros, and cons, of using the pie chart for this data?
+- Would it be better if the pies used age for the segments, and facetted by year (and sex)?
+
+### Re-arrange conditioning
+
+Proximity is a a really powerful tool. Knowing how to effectively use facet, and colour to map different variables, will improve your data plots, out of this world `r emo::ji("earth")` `r emo::ji("rocket")`!
+
+```{r compare counts of ages, fig.height=12, echo=FALSE, eval=FALSE}
+#ggplot(tb_fr, aes(x=year, y=count, fill=age)) +
+#  geom_bar(stat="identity") + 
+#  facet_wrap(sex~age, ncol=2) +
+#  scale_fill_brewer("", palette="Dark2") +
+#  scale_x_continuous("year", breaks=seq(1995, 2012, 5), labels=c("95", "00", "05", "10"))
+```
+
+```{r eval=FALSE}
+- Not what we want
+- Same information as previous
+- We'd like to directly compare male femal for each year, and age, side-by-side bar chart
+```
+
+We want to focus on differences between sexes, and alternatively also differences between ages. To make it easier, we'll reduce the time period to just one year, 2012. 
+
+
+```{r focus on one year gender, side-by-side bars of males/females, echo=TRUE, fig.height=3}
+tb_fr %>% filter(year == 2012) %>%
+  ggplot(aes(x=sex, y=count, fill=sex)) +
+  geom_bar(stat="identity", position="dodge") + 
+  facet_wrap(~age, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  ggtitle("Arrangement A")
+```
+
+```{r focus on one year age, side-by-side bars of age group, echo=TRUE, fig.height=3}
+tb_fr %>% filter(year == 2012) %>%
+  ggplot(aes(x=age, y=count, fill=age)) +
+  geom_bar(stat="identity", position="dodge") + 
+  facet_wrap(~sex, ncol=6) +
+  scale_fill_brewer("", palette="Dark2") +
+  ggtitle("Arrangement B")
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+We've got two different rearrangements of the same information. 
+
+What do we learn? That is different from each? What's the focus of each? What's easy, what's harder?
+
+```{r eval=FALSE}
+- Arrangement A makes it easier to directly compare male and female counts, separately for each age group. Generally, male counts are higher than female counts. There is a big difference between counts in the 45-54 age group, and over 65 counts are almost the same.
+- Arrangement B makes it easier to directly compare counts by age group, separately for females and males. For females, incidence drops in the middle years. For males, it is pretty consistently high across age groups. 
+```
+
+### `r icon::fa("terminal")` YOUR TURN 
+
+Extend the last plot to examine two years, 2008 and 2012. 
+
+### Grammar and Statistics
+
+<img src="images/tidy_mapping.png" style="width: 100%" />
+
+What I love about ggplot2...
+
+<img src="https://www.wired.com/wp-content/uploads/2016/01/DB-Transformation-Colour.gif" style="width: 50%" />
+
+[Source: https://www.wired.com/wp-content/uploads/2016/01/DB-Transformation-Colour.gif](https://www.wired.com/wp-content/uploads/2016/01/DB-Transformation-Colour.gif)
+
+...you can make so many different displays of the same data, and each time something new may emerge. 
+
+### Discussion
+
+- Grammar of graphics makes rearranging easy
+- Its good to look at the data in many different ways [Unwin, Hofmann and Cook](https://journal.r-project.org/archive/2013/RJ-2013-012/RJ-2013-012.pdf)
+
+## Stretch time
+
+<br>
+<br>
+
+`r nia("Time for a stretch break", animate="shake", size="4", colour="white", bgcolor="#DE3163", flip="vertical", border=TRUE)`
+
+<br>
+<br>
+
+## 1b. Inference with graphics
+
+```{r section header 2, eval=FALSE}
+# ***********************
+# Inference with graphics
+# ***********************
+```
+
+### What is inference?
+
+Inferring that what we see in the data at hand holds more broadly in life, society and the world.
+
+### Why do we need it for graphics?
+
+Here's an example tweeted by David Robinson:
+
+<img src="images/drob_twitter.png" style="width: 200px">
+
+Based on an analysis in [Tick Tock blog, by Graham Tierney](https://ticktocksaythehandsoftheclock.wordpress.com/2018/01/11/capitals-and-good-governance/)
+
+*Below is a simple scatterplot of the two variables of interest. A slight negative slope is observed, but it does not look very large. There are a lot of states whose capitals are less than 5% of the total population. The two outliers are Hawaii (government rank 33 and capital population 25%) and Arizona (government rank 26 and capital population 23%). Without those two the downward trend (an improvement in ranking) would be much stronger.*
+
+*I ran linear regressions of government rank on the percentage of each state’s population living in the capital city, state population (in 100,000s), and state GDP (in $100,000s).... The coefficient is not significant for any regression at the traditional 5% level.*
+
+*... I'm not convinced that the lack of significance is itself significant.*
+
+
+### To do *statistical* inference
+
+You need a:
+
+- null hypothesis, and alternative
+- statistic computed on the data
+- reference distribution on which to measure the statistic: if its extreme on this scale you would reject the null
+
+### Inference with *data plots*
+
+You need a:
+
+- plot description, as provided by the grammar (which is a statistic) - this would prescribe the null hypothesis
+- null generating mechanism, e.g. permutation, simulation from a distribution or model
+- human vision, to examine array of plots and decide if any are different from the others
+
+### Let's do it
+
+<img src="images/nullabor_hex.png" style="width: 20%" />
+
+Example from the nullabor package. The data plot is embedded randomly in a field of null plots, this is a **lineup**. Can you see which one is different?
+
+When you run the example yourself, you get a `decrypt` code line, that you run after deciding on a plot to print the location of the data plot amongst the nulls. 
+
+```{r lineup 1, fig.height=8, fig.width=8}
+# Make a lineup of the mtcars data, 20 plots, one is the data, 
+# and the others are null plots. Which one is different?
+set.seed(20190709)
+ggplot(lineup(null_permute('mpg'), mtcars), aes(mpg, wt)) +
+  geom_point() +
+  facet_wrap(~ .sample)
+```
+
+
+- plot is a scatterplot, null hypothesis is *there is no association between the two variables mapped to the x, y axes*
+- null generating mechanism: permutation
+
+#### Example 2
+
+```{r lineup 2}
+# A different lineup of the mtcars data, still using permutation to generate the nulls
+ggplot(lineup(null_permute('cyl'), mtcars),
+       aes(mpg, .sample, colour = factor(cyl))) +
+       geom_point()
+```
+
+#### Example 3
+
+Assessing a residual plot
+
+```{r lineup 3, fig.height=6}
+# Assessing model fit, using a lineup of residual plots, 19 are nulls, and one is the 
+# residual plot. Is there structure in the residual plot that identifies it as having 
+# less than random variation. Nulls are generated by `rotating` residuals after model fit.
+tips <- read_csv("http://www.ggobi.org/book/data/tips.csv")
+x <- lm(tip ~ totbill, data = tips)
+tips.reg <- data.frame(tips, .resid = residuals(x), .fitted = fitted(x))
+ggplot(lineup(null_lm(tip ~ totbill, method = 'rotate'), tips.reg)) +
+  geom_point(aes(x = totbill, y = .resid)) +
+  facet_wrap(~ .sample)
+```
+
+#### Example 4
+
+Temporal dependence
+
+```{r lineup 4}
+# Assessing time series model fit using simulation to produce null plots.
+data(aud)
+l <- lineup(null_ts("rate", auto.arima), aud)
+ggplot(l, aes(x=date, y=rate)) + geom_line() +
+  facet_wrap(~.sample, scales="free_y") +
+  theme(axis.text = element_blank()) +
+  xlab("") + ylab("")
+```
+
+### `r icon::fa("terminal")` YOUR TURN
+
+### Cancer data
+
+Cancer incidence across the US 2010-2014, all cancer types, per 100k. Data from American Cancer Society, https://cancerstatisticscenter.cancer.org.
+
+```{r make a map lineup, fig.height=6, fig.width=10}
+# Read xlsx spreadsheet on cancer incidence in USA, for a more
+# complex lneup example, a lineup of maps
+incd <- read_xlsx("data/IncRate.xlsx", skip=6, sheet=2) %>%
+  filter(!(State %in% c("All U.S. combined", "Kansas"))) %>%
+  select(State, `Melanoma of the skin / Both sexes combined`) %>%
+  rename(Incidence=`Melanoma of the skin / Both sexes combined`) %>%
+  mutate(Incidence = as.numeric(substr(Incidence, 1, 3)))
+
+# State names need to coincide between data sets
+incd <- incd %>% mutate(State = tolower(State))
+
+# Choose a position 
+pos <- 6
+
+# Make lineup of cancenr incidence
+incd_lineup <- lineup(null_permute('Incidence'), incd, n=12, pos=pos)
+
+# Join cancer incidence data to map polygons
+incd_map <- left_join(fifty_states, filter(incd_lineup, .sample==1),
+                      by=c("id"="State"))
+for (i in 2:12) {
+  x <- left_join(fifty_states, filter(incd_lineup, .sample==i),
+                      by=c("id"="State"))
+  incd_map <- bind_rows(incd_map, x)
+}
+# Remove Kansas - it was missing the cancer data
+incd_map <- incd_map %>% filter(!is.na(.sample))
+
+# Plot the maps as a lineup
+#library(mapproj)
+ggplot(incd_map) + 
+  geom_polygon(aes(x=long, y=lat, fill = Incidence, group=group)) + 
+  expand_limits(x = incd_map$long, y = incd_map$lat) +
+  #coord_map() +
+  scale_x_continuous(breaks = NULL) + 
+  scale_y_continuous(breaks = NULL) +
+  labs(x = "", y = "") +
+  scale_fill_distiller(palette="YlGn", type="seq", direction=1) +
+  theme(legend.position = "none", 
+        panel.background = element_blank()) +
+  facet_wrap(~.sample, ncol=4)
+```
+
+`r nia("Enter your choice here")`
+
+http://bit.ly/hdvlineup
+
+
+`r icon("lightbulb")` Why lineups for maps?
+
+Spatial and temporal analysis has an EDA component, to extract trend or clustering, or outliers, before handling the error dependency.
+
+*Spatiotemporal statistics is what happens after all the interesting stuff is done.*
+Professor Heike Hofmann, Statistics, Iowa State University
+
+### When you are ready, check your answer
+
+Position is $81^{1/4}*2$.
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+Take a look at the code used to generate the map lineup.
+
+- What is the null hypothesis?
+- What is the null generating process?
+- Why did we need to generate the lineup data first, and then make the plot?
+
+### Compute p-value
+
+```{r compute p-value, echo=TRUE}
+# Compute the p-value associated with this lineup, and the observer responses
+pvisual(10, 50, 12)
+```
+
+
+### `r icon::fa("terminal")` YOUR TURN
+
+- Run the code to make the map lineup
+- Choose a different cancer, make the lineup, and test your neighbour
+
+### Tuberculosis example
+
+```{r outbreak check, echo=TRUE}
+# This is a potentially really tough example to generate null plots for. 
+# Here is the plot again to stimulate your brain cells.
+# What would you do to make a null plot to detect temporal anomalies?
+tb_fr %>% filter(sex=="f", age=="2534") %>%
+  ggplot(aes(x=year, y=count, fill=sex)) +
+  geom_bar(stat="identity") + 
+  scale_fill_brewer("", palette="Dark2") +
+  theme(legend.position="none")
+```
+
+Was there really a TB outbreak in 2008, or are the counts observed consistent with variability from year to year?
+
+- Plot: barchart of counts
+- Null generating: fix age group, fix gender, break time dependency while keep temporal trend. 
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+How *might you* generate the nulls?
+
+## Stretch time
+
+<br>
+<br>
+
+`r nia("Time for a stretch break", animate="shake", size="4", colour="white", bgcolor="#DE3163", flip="vertical", border=TRUE)`
+
+<br>
+<br>
+
+## 2. Plotting multiple dimensions simply
+
+```{r section header 3, eval=FALSE}
+# ***********************************
+# Plotting multiple dimensions simply
+# ***********************************
+```
+
+### Scatterplot matrix
+
+The basic plot plot for multivariate data is a scatterplot matrix. There are two functions available in the GGally package: `ggscatmat`, `ggpairs`.
+
+```{r scatterplot matrix, echo=TRUE, fig.width=8, fig.height=8}
+# Make a simple scatterplot matrix of a classic data set
+data(flea)
+ggscatmat(flea, columns = 1:6)
+```
+
+*What do we learn?*
+
+- clustering
+- linear dependence
+- marginal discrete distribution
+
+**Add some colour for groups**
+
+```{r scatterplot matrix with colour, echo=TRUE, fig.width=8, fig.height=8}
+# Re-make mapping colour to species (class)
+data(flea)
+ggscatmat(flea, columns = 1:6, color = "species") +
+  theme(legend.position="bottom")
+```
+
+*What do we learn?*
+
+- clustering is due to the class variable
+
+### Generalised pairs plot
+
+These functions strictly take numeric variables. For a wider variety of variable types, use `ggpairs`.
+
+```{r generalised pairs plot, echo=TRUE, fig.width=8, fig.height=8}
+# Matrix plot when variables are not numeric
+data(australia_PISA2012)
+australia_PISA2012 <- australia_PISA2012 %>%
+  mutate(desk = factor(desk), room = factor(room),
+         study = factor(study), computer = factor(computer),
+         software = factor(software), internet = factor(internet),
+         literature = factor(literature), poetry= factor(poetry),
+         art = factor(art), textbook = factor(textbook),
+         dictionary = factor(dictionary),
+         dishwasher = factor(dishwasher))
+australia_PISA2012 %>% 
+  filter(!is.na(dishwasher)) %>% 
+  ggpairs(columns=c(3, 15, 16, 21, 26))
+```
+
+Its a bit slower, but it has a huge amount of flexibility.
+
+```{r generalised pairs plot enhance plots, echo=TRUE, fig.width=8, fig.height=8}
+# Modify the defaults, set the transparency of points since there is a lot of data
+australia_PISA2012 %>% 
+  filter(!is.na(dishwasher)) %>% 
+  ggpairs(columns=c(3, 15, 16, 21, 26), 
+          lower = list(continuous = wrap("points", alpha=0.05)))
+```
+
+```{r generalised pairs plot enhance more, echo=TRUE, fig.width=8, fig.height=8}
+# Make a special style of plot to put in the matirx
+my_fn <- function(data, mapping, method="loess", ...){
+      p <- ggplot(data = data, mapping = mapping) + 
+      geom_point(alpha=0.2, size=1) + 
+      geom_smooth(method="lm", ...)
+      p
+}
+australia_PISA2012 %>% 
+  filter(!is.na(dishwasher)) %>% 
+  ggpairs(columns=c(3, 15, 16, 21, 26), 
+          lower = list(continuous = my_fn))
+
+```
+
+*What do we learn?*
+
+- moderate increase in all scores as more time is spent on homework
+- test scores all have a very regular bivariate normal shape - is this simulated data? yes.
+- having a dishwasher in the household corresponds to small increase in homework time
+- very little but slight increase in scores with a dishwasher in household
+
+### `r icon::fa("terminal")` YOUR TURN
+
+Re-make the plot with side-by-side boxplots on the lower triangle, for the combo variables, and the density plots in the upper triangle.
+
+### When there is a response variable
+
+```{r reponse vs predictors, echo=TRUE, fig.width=8, fig.height=3}
+# This is a variation of the scatterplot matrix when there are two sets of variables.
+# A simple example is when there is one response variable, and multiple predictors.
+australia_PISA2012 %>% 
+  filter(!is.na(desk)) %>% 
+  filter(!is.na(room)) %>% 
+  filter(!is.na(study)) %>% 
+  filter(!is.na(gender)) %>% 
+  ggduo(columnsX=c(3, 4, 5, 6, 1), columnsY=21, 
+        types=list(continuous = wrap("points", alpha=0.1)))
+```
+
+*What do we learn?*
+
+- Higher reading score, on average, corresponds to more time on homework, having a desk, room, study area, and being female.
+
+### Let's explore tuberculosis mortality
+
+This data set is available from WHO along with the incidence data. The package `getTBinR` is a good way to download the burden table, which contains (estimated) mortality rates. 
+
+```{r how to pull the tb data directly, eval=FALSE}
+# library(getTBinR)
+# tb_burden <- get_tb_burden(verbose = FALSE)
+# dict <- get_data_dict(verbose = FALSE)
+# save(tb_burden, file="data/tb_burden.rda")
+```
+
+You have the data downloaded in the data directory already. We'd like to explore the rates across countries. To do this we will fit a linear model for each country and collect some statistics from each model fit. Using these, we'll extract countries with specific characteristics.
+
+```{r explore tb mortality trends, echo=TRUE, fig.width=8, fig.height=8}
+# A more complex example of using the scatterplot matrix to explore
+# a large collection of time series. Compute statistics for each time
+# series, which might be called tignostics, and plot these. Explore 
+# the scatterplot matrix for anomalies and clusters. 
+load("data/tb_burden.rda")
+# Fit a model for each country, and extract statistics
+tb_reg1 <- tb_burden %>%
+  group_by(country) %>%
+  nest() %>%
+  mutate(model = purrr::map(data, ~lm(e_mort_exc_tbhiv_100k ~ year, data = .x) %>% 
+                       tidy)) %>% 
+  unnest(model) %>%
+  select(country, term, estimate) %>%
+  spread(term, estimate) %>%
+  rename(intercept = `(Intercept)`, slope=year)
+tb_reg2 <- tb_burden %>%
+  group_by(country) %>%
+  nest() %>%
+  mutate(model = purrr::map(data, ~lm(e_mort_exc_tbhiv_100k ~ year, data = .x) %>% 
+                       glance)) %>% 
+  unnest(model) %>%
+  select(country, r.squared, sigma, BIC, deviance)
+tb_reg <- left_join(tb_reg1, tb_reg2)
+# Drop the 0 deviance, 0 sigma countries
+tb_reg <- tb_reg %>% filter(sigma > 0, BIC > -400)
+ggscatmat(tb_reg, columns=3:7)
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+What do you learn about mortality rates across the difference countries from this?
+
+<br>
+
+`r icon("hand-point-right")` **Add interactivity**
+
+```{r explore tb mortality trends interactively, echo=TRUE, fig.width=8, fig.height=6}
+# Add interaction to find the id's for countries that are anomalies
+tb_reg_m <- as.data.frame(tb_reg[,3:7])
+rownames(tb_reg_m) <- tb_reg$country
+tb_reg_m %>% ggpairs() %>% ggplotly()
+```
+
+<br>
+
+The row number of the data matrix that shows on mouseover can be used to find the country.
+
+<br>
+
+```{r plot the countries that have decreasing mortality trend, echo=TRUE, fig.width=8, fig.height=5}
+# Use a dotplot with model overlaid, to better match analysis conducted
+declining <- tb_reg %>% filter(slope < -3.5)
+tb_burden %>% filter(country %in% declining$country) %>%
+  ggplot(aes(x=year, y=e_mort_exc_tbhiv_100k)) + 
+    geom_point() +
+    geom_smooth(method="lm", se=F) +
+  facet_wrap(~country, scales = "free_y")
+```
+
+```{r explore tb mortality trends problem countries, echo=TRUE, fig.width=8, fig.height=3}
+increasing <- tb_reg %>% filter(slope > 1, r.squared > 0.5)
+tb_burden %>% filter(country %in% increasing$country) %>%
+  ggplot(aes(x=year, y=e_mort_exc_tbhiv_100k)) + 
+    geom_point() +
+    geom_smooth(method="lm", se=F) +
+  facet_wrap(~country, scales = "free_y")
+```
+
+### `r icon::fa("terminal")` YOUR TURN
+
+- Plot the countries that have the highest variance
+- Plot the countries with the smallest variance, and highest slope
+- Plot all the coutries in one plot, as transparent lines. 
+
+## Stretch time
+
+<br>
+<br>
+
+`r nia("Time for a stretch break", animate="shake", size="4", colour="white", bgcolor="#DE3163", border=TRUE)`
+
+<br>
+<br>
+
+## 3. Tours of high-dimensions
+
+```{r section header 4, eval=FALSE}
+# ************************
+# Tours of high-dimensions
+# ************************
+```
+
+### What is high-dimensional data visualisation
+
+Most of what you find when you google "visualising high-dimensions" is awful, e.g. use colour and symbol after 3D to show 5D; PCA, MDS, tSNE, are visualisation methods; "you can't see beyond 3D".... Rubbish!
+
+### What are dimensions
+
+<img src="images/cubes.png" style="width: 90%; align: center" />
+
+- When you add another variable, you implicitly add another orthogonal axis. 
+- The space is effectively a $p$-dimensional cube
+- The data might not fill the cube, and then dimension reduction might make it a $k(<p)$-dimensional cube
+
+### Quick intro
+
+<img src="images/tourr.png" width="30%" />
+
+*Without thinking too much*: How many clusters do you see?
+
+```{r code for generating a 6D tour, eval=FALSE, echo=TRUE}
+# The tour requires making many plots, and updating.
+# The RStudio graphics device doesn't work well
+# Open a graphics window
+# quartz()  # Mac OSX
+# X11()     # Windows
+animate_xy(flea[,1:6], axes = "off")
+```
+
+```{r eval=FALSE}
+render_gif(flea[,1:6], grand_tour(), display_xy(axes="off"),
+           frames=200, 
+           gif_file="images/flea_tour.gif")
+```
+
+
+### What is a tour?
+
+A grand tour is by definition a movie of low-dimensional projections constructed in such a way that it comes arbitrarily close to showing all possible low-dimensional projections; in other words, a grand tour is a space-filling curve in the manifold of low-dimensional projections of high-dimensional data spaces.
+
+<img src="images/hands.png" width="60%">
+
+Movement patterns indicate structure:
+
+<img src="images/tour_schematic.png" width="80%">
+
+Here is a grand tour of a 3D classic data set
+
+<iframe src="images/flea3d.html" width="800" height="500" scrolling="yes" seamless="seamless" frameBorder="0"> </iframe>
+
+The axes show the combination of variables making up any particular 2D projection.
+
+This is a grand tour of the full 6D. Can you see clusters? Corresponding to the colours? 
+
+<iframe src="images/flea6d.html" width="800" height="500" scrolling="yes" seamless="seamless" frameBorder="0"> </iframe>
+
+These two animations were made with `plotly`.
+
+### Geometries in high-d
+
+Let's take a look at some standard high-d shapes. The first one is a cube.
+
+```{r make a 5D cube, eval=FALSE, echo=TRUE}
+cube <- cube.face(p = 5)
+animate_xy(cube$points)
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- Change it to a 3D cube, and then a 4D cube. How does the appearance in the tour change?
+
+```{r make a 5D sphere, eval=FALSE, echo=TRUE}
+sphere <- data.frame(sphere.hollow(p = 5)$points)
+animate_xy(sphere)
+```
+
+`r set.seed(20190709); emo::ji("fantasy")` `r set.seed(20190712); emo::ji("fantasy")` `r set.seed(20190711); emo::ji("fantasy")` **TWO MINUTE CHALLENGE**
+
+- Change to a 3D sphere, and then a 4D sphere. How does this differ from the cube, in appearance in the tour?
+
+```{r make a 5D simplex, eval=FALSE, echo=TRUE}
+simp <- simplex(p = 5)
+animate_xy(simp$points, edges=as.matrix(simp$edges), axes="bottomleft")
+```
+
+### `r icon::fa("terminal")` YOUR TURN
+
+- Make a 3D torus, followed by  a 4D torus
+- Or a mobius strip, or boy surface
+
+### Multivariate distributions
+
+```{r simulate sample from a 5D standard normal, eval=FALSE, echo=TRUE}
+x <- data.frame(rmvnorm(500, mean = rep(0, 5)))
+animate_xy(x, axes="bottomleft")
+```
+
+```{r simulate sample from a 5D t, eval=FALSE, echo=TRUE}
+x <- data.frame(rmvt(500, sigma = diag(5)))
+animate_xy(x, axes="bottomleft")
+```
+
+```{r simulate sample from a mixture of 5D standard normal, eval=FALSE, echo=TRUE}
+simp <- simplex(p = 5)$points*5
+x1 <- data.frame(rmvnorm(100, mean=simp[1,]))
+x2 <- data.frame(rmvnorm(100, mean=simp[2,]))
+x3 <- data.frame(rmvnorm(100, mean=simp[3,]))
+x4 <- data.frame(rmvnorm(100, mean=simp[4,]))
+x5 <- data.frame(rmvnorm(100, mean=simp[5,]))
+x <- bind_rows(x1, x2, x3, x4, x5)
+animate_xy(x, axes="bottomleft")
+animate_xy(x, axes="bottomleft", tour_path=guided_tour(holes()))
+```
+
+### Why use a tour?
+
+Other than basic exploration:
+
+- **initial data analysis**: to examine whether the data 
+    - satisfies assumptions required for the method
+    - has unexpected complications like outliers or nonlinearity
+- **examine the model fit**:    
+    - dimension reduction, e.g. to look at more than 2 PCs
+    - clustering, and examine the model like the dendrogram in high-d, or the k-means, or the estimated model from model-based
+    - classification: boundaries between classes, misclassifications, diagnostics like vote matrix from random forest
+
+### Guided tour
+
+Uses projection pursuit:
+
+$$\mathop{\text{maximize}}_{\phi_{11},\dots,\phi_{p1}} f\left(\sum_{j=1}^p \phi_{j1}x_{ij}\right) \text{ subject to }
+\sum_{j=1}^p \phi^2_{j1} = 1$$
+
+
+The guided tour chooses new target projections by optimising a function of interest:
+
+- `holes`: This is an inverse Gaussian filter, which is optimised wheren there is not much data in the center of the projection, i.e. a "hole" or donut shape in 2D.
+- `central mass`: The opposite of holes, high density in the centre of the projection, and often "outliers" on the edges. 
+- `LDA`: An index based on the linear discrimination dimension reduction, optimised by projections where the named classes are most separated.
+
+```{r guided tour 6D, eval=FALSE, echo=TRUE}
+# The tour requires making many plots, and updating.
+# The RStudio graphics device doesn't work well
+# Open a graphics window
+# quartz()  # Mac OSX
+# X11()     # Windows
+animate_xy(flea[,1:6], guided_tour(lda_pp(flea$species)), axes="bottomleft")
+```
+
+### Manual tour
+
+This is a good way to determine how important a structure in the projection is to a particular variable contribution. You can "rotate" a variable out, and observe if the pattern remains or disappears. 
+
+```{r generate a sequence to rotate a variable out of a projection, eval=FALSE, echo=TRUE}
+# When you find a low dimensional projection from some other technique
+# such as principal component analysis, linear discriminant analysis or 
+# projection pursuit, it is useful to examine the sensitivity of structure
+# to variables in the projection. This is the purpose of the manual tour. 
+# Take a variable, and rotate it out of the projection and see if the structure
+# persists or disappears.
+flea_std <- tourr::rescale(flea[, 1:6])
+
+rb <- basis_random(n = ncol(flea_std))
+mtour <- manual_tour(basis = rb, manip_var = 4)
+sshow <- array2df(array = mtour, data = flea_std)
+render_plotly(slides = sshow)
+
+render_plotly(slides = sshow, col = col_of(flea$species), 
+  fps = 2)
+```
+
+### Examining models: randomForest
+
+We will take a look at the vote matrix from a random forest fit, on the classic olive oil data. The vote matrix contains the proportion of times each observation is predicted to be in each class. Geometrically it is a simplex. Points close to a vertex, correspond to observations where the classifier almost always predicts to one class, that is, very certain. Points between vertices are observations with uncertainty.
+
+```{r read and tour on in a classic data set, echo=TRUE, eval=FALSE}
+olive <- read_csv("http://www.ggobi.org/book/data/olive.csv") %>%
+  rename(name=X1)
+olive <- olive %>%
+  filter(region == 1) %>%
+  mutate(area = factor(area))
+pal <- brewer.pal(4, "Dark2")
+col <- pal[olive$area]
+# drop eicosenoic, all low for south
+animate_xy(olive[,4:10], axes="bottomleft", col=col) 
+# Drop Sicily
+animate_xy(olive[olive$area!=4,4:10], axes="bottomleft", col=col[olive$area!=4]) 
+```
+
+```{r Fit a randomForest model an examine the vote matrix, echo=TRUE, eval=FALSE}
+olive_rf <- randomForest(area~., data=olive[,-c(1, 2, 11)], importance=TRUE, proximity=TRUE)
+olive_rf
+vt <- data.frame(olive_rf$votes)
+vt$area <- olive$area
+ggscatmat(vt, columns=1:4, col="area") + 
+  scale_colour_brewer("", palette="Dark2")
+proj <- t(geozoo::f_helmert(4)[-1,])
+vtp <- as.matrix(vt[,-5])%*%proj
+vtp <- data.frame(vtp, area=vt$area)
+ggscatmat(vtp, columns=1:3, col="area") + 
+  scale_colour_brewer("", palette="Dark2")
+pal <- brewer.pal(4, "Dark2")
+col <- pal[as.numeric(vtp[, 4])]
+animate_xy(vtp[,1:3], col=col, axes = "bottomleft")
+# Add simplex
+simp <- simplex(p=3)
+sp <- data.frame(simp$points)
+colnames(sp) <- c("x1", "x2", "x3")
+colnames(vtp) <- c("x1", "x2", "x3")
+vtp_s <- bind_rows(sp, vtp[,1:3])
+animate_xy(vtp_s, col=col, axes = "bottomleft", edges=as.matrix(simp$edges), center=TRUE)
+```
+
+### Examining models: principal component analysis
+
+
+```{r tb pca analysis, eval=FALSE, echo=TRUE}
+library(naniar) # Have missings!
+tb_burden_wide <- tb_burden %>%
+  select(country, g_whoregion, year, e_mort_exc_tbhiv_100k) %>%
+  spread(year, e_mort_exc_tbhiv_100k) %>%
+  filter(complete.cases(.)) %>%
+  rename(region = g_whoregion) %>%
+  mutate(country = factor(country), region = factor(region))
+# vis_miss(tb_burden_wide)  
+tb_pca <- prcomp(tb_burden_wide[,-c(1:2)], scale=FALSE, retx=TRUE)
+screeplot(tb_pca, type="line")
+tb_pcs <- bind_cols(as_tibble(tb_pca$x), tb_burden_wide[,1:2])
+ggscatmat(tb_pcs, columns=1:3, color="region")
+# quartz()
+# X11()
+pal <- brewer.pal(6, "Dark2")
+col <- pal[as.numeric(as.factor(tb_pcs$region))]
+animate_xy(tb_pcs[,1:4], col=col, axes = "bottomleft")
+```
+
+- The main structure is a "shuttlecock" shape: that most countries have similarly low rates and a handful of countries deviate from this. 
+- A few, quite a few, outliers.
+
+```{r tb mortality line plots, eval=FALSE, echo=TRUE}
+tb_burden <- tb_burden %>%
+  rename(region = g_whoregion)
+ggplot(tb_burden, aes(x=year, y=e_mort_exc_tbhiv_100k, 
+                      group=country, colour=region)) +
+  geom_line() + facet_wrap(~region)
+```
+
+### Examining models: hierarchical clustering
+
+Hierarchical clustering is usually summarised by a dendrogram, showing which observations are joined into clusters, and at what distance they are fused. Dendrograms can look alike but be quite different models. We can use a tour to view the cluster model in the high-dimensional space. To do so, we need to:
+
+- append nodes (indicating a cluster centre) for the tree to the data matrix
+- create an edge list to connect nodes, and the points to the nodes
+
+```{r eval=FALSE, echo=FALSE}
+# Function to generate edges of dendrogram
+hierfly <- function(data, h=NULL, metric="euclidean", method="ward.D2", scale=TRUE) {
+  if (scale) data <- rescaler(data)
+  id <- 1:nrow(data)
+  cat <- sapply(data, is.factor)
+  if (is.null(h))
+    h <- hclust(dist(data[,!cat], metric), method)
+  #h <- hclust(dist(data, metric), method)
+  data_hc <- data
+
+  data_hc$ORDER <- order(h$order)
+  data_hc$HEIGHT <- 0
+  data_hc$LEVEL <- 0
+  data_hc$POINTS <- 1
+
+  #newr_df <- NULL
+  data_hc <- as.data.frame(data_hc)
+  for (i in 1:nrow(h$merge)) {
+    newr <- combinerows(data_hc[as.character(-h$merge[i,]),], cat)
+    #newr <- combinerows(data_hc[as.character(-h$merge[i,]),], rownames(data))
+    #newr$id <- nrow(data_hc) + i
+    newr$HEIGHT <- h$height[i]
+    newr$LEVEL <- i
+    rownames(newr) <- as.character(-i)
+
+    data_hc <- rbind(data_hc, newr)
+  }
+  data_hc$id <- 1:nrow(data_hc)
+  data_hc$node <- (as.numeric(rownames(data_hc)) < 0) + 0
+
+  vars <- c("ORDER", "POINTS")
+
+  leaves <- subset(data_hc, node == 0)
+  nodes <- subset(data_hc, node == 1)
+
+  # < 0 = observation, > 0 = cluster
+  edges <- h$merge
+  edges[edges > 0] <- edges[edges > 0] + nrow(leaves)
+  edges[edges < 0] <- abs(edges[edges < 0])
+  edges <- as.matrix(edges)
+
+  return(list(data=data_hc, edges=edges))
+}
+
+# Utility functions
+combinerows <- function(df, cat) {
+  same <- function(x) if (length(unique(x)) == 1) x[1] else x[2]
+  points <- df$POINTS
+
+  cont <- as.data.frame(lapply(df[, !cat, drop=FALSE] * points,
+                               sum)) / sum(points)
+  cat <- as.data.frame(lapply(df[, cat, drop=FALSE], same))
+
+  df <- if (nrow(cont) > 0 && nrow(cat) > 0) {
+    cbind(cont, cat)
+  } else if (nrow(cont) > 0) {
+    cont
+  } else {
+    cat
+  }
+  df$POINTS <- sum(points)
+  df
+}
+
+rescaler <- function(df) {
+  is_numeric <- vapply(df, is.numeric, logical(1))
+  df[is_numeric] <- lapply(df[is_numeric], rescale01)
+  df
+}
+
+rescale01 <- function(x) {
+  rng <- range(x, na.rm = TRUE)
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+```
+
+```{r eval=FALSE, echo=TRUE}
+# Load the utility functions: hierfly, combinerows, rescaler
+tb_hc <- hclust((dist(tb_pcs[,1:4])), method="ward.D2")
+plot(tb_hc)
+tb_clw <- tb_pcs[,1:4] %>% mutate(cl = factor(cutree(tb_hc, 5)))
+tb_w_hfly <- hierfly(data=tb_clw, h=tb_hc, scale=FALSE)
+pal <- brewer.pal(6, "Dark2")
+col <- pal[as.numeric(tb_w_hfly$data$cl)]
+shp <- c(16, 6)
+pch <- shp[tb_w_hfly$data$node+1]
+# quartz()
+# X11()
+animate_xy(tb_w_hfly$data[,1:4], col=col, pch=pch, 
+           axes = "bottomleft", 
+           edges=tb_w_hfly$edges, edges.col=col[210:417])
+```
+
+To compare multiple models, save a tour path, and show the two models on the same path.
+
+### Examining models: tsne
+
+This is a preliminary R package, [sneezy](https://github.com/sa-lee/sneezy) for exploring nonlinear dimension reduction solutions, with a tour. It is the work of [Stuart Lee](https://stuartlee.org).
+
+The data is 10D. [t-SNE](https://lvdmaaten.github.io/tsne/) is a non-linear dimension reduction algorithm which is used to view cluster structure in high-dimensional data. There is an R package implementation, [Rtsne](https://cran.r-project.org/web/packages/Rtsne/index.html). 
+
+It can be particularly hard to tune the parameters when fitting the t-SNE model. This provides a way to map back to the original data space, to see how the data was transformed. 
+
+```{r nonlinear dimension reduction, eval=FALSE, echo=TRUE}
+# remotes::install_github("sa-lee/sneezy")
+library(gganimate) # required for printing tours
+library(sneezy)
+# Read a benchmark data set
+spheres <- subset(multi, key %in% c("A", "D"))
+labels <- ifelse(spheres$key == "A", "sub-gaussian", "10-d 2x cluster")
+spheres <- as.matrix(spheres[, -c(1,2)])
+
+# t-SNE plot
+set.seed(1010010)
+coords <- basic_tsne(spheres, perplexity = 30)
+pl <- ggplot(as.data.frame(coords$Y), aes(V1, V2)) +
+  geom_point(aes(colour = labels)) +
+  coord_equal() +
+  scale_color_brewer(palette = "Dark2") +
+  theme(axis.title = element_blank(), 
+        axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        panel.grid = element_blank())
+
+pl +  add_triangles(coords) 
+
+# in data space, with a triangulation of the points from the tSNE view
+# quartz()
+# X11()
+pal <- c("#1B9E77", "#D95F02")[as.integer(as.factor(labels))]
+sneezy_triangles(spheres, coords, col = pal)
+```
+
+You can see that in the data space, that the 
+
+- three small clusters are there, are very close and very compact. 
+- Next to them is a long, elliptical cluster, that is also small and compact. 
+- The two big clusters are spherical and far apart. 
+
+From t-SNE 2D represenation, the 6 clusters are clearly identified. We probably would have missed that there were 6 clusters using the tour alone, because four of them are so close together, and the distance between clusters is heterogeneous. t-SNE destroys the between cluster information, and the relative position of clusters in the high-d space. 
+
+In combination with the tour, we get a deeper understanding of the cluster structure.
+
+### Comparison to parallel coordinates
+
+```{r tour again for comparison, eval=FALSE}
+# quartz()
+# X11()
+pal <- brewer.pal(4, "Dark2")
+col <- pal[olive$area]
+# drop eicosenoic, all low for south
+animate_xy(olive[,4:10], axes="bottomleft", col=col) 
+# Drop Sicily
+animate_xy(olive[olive$area!=4,4:10], axes="bottomleft", col=col[olive$area!=4]) 
+```
+
+Parallel coordinates show multiple dimensions by drawing lines connectiong observations plotted as univariate dotplots. It is a parallel geometric space rather than a Euclidean space. But is can be useful for getting a single static view, as an alternative to a scatterplot matrix.
+
+```{r make a parallel coordinate plot of the olive data, eval=FALSE, echo=TRUE}
+ggparcoord(olive, columns=4:10, groupColumn=3, order="anyClass") + 
+  scale_colour_brewer("", palette="Dark2")
+```
+
+### Comparison to heatmap
+
+A heatmap uses maps a quantitative variable to colour, and displays in a matrix layout. Often accompanied by a clustering, or ordering of rows and columns. Colour mapping of a quantitative variable is the lowest on the hierarchy of mappings, and difficult for a user to accurately read the information. The coordinate system underlying this form of mapping is not clear, its not Euclidean.
+
+```{r make a heatmap of the olive data, eval=FALSE, echo=TRUE}
+library(superheat)
+superheat(olive[,4:10], scale=TRUE, 
+          pretty.order.rows=TRUE, pretty.order.cols=TRUE,
+          row.dendrogram = TRUE) 
+```
+
+### Making a tourr animation using plotly
+
+The easiest approach is to use the `play_tour_path` function from `spinifex`. Either show it like, or save it to an html file for later replay with `save_html` from the `htmltools` package.
+
+```{r plotly tourr, eval=FALSE, echo=TRUE}
+flea_std <- rescale(tourr::flea[,1:6])
+tpath    <- save_history(flea_std, max = 3)
+
+pg <- play_tour_path(tour_path = tpath, data = flea_std, angle = .15)
+pg 
+save_html(pg, file="mytour.html")
+```
+
+### Making a tourr animation using gganimate
+
+The function `render_gif` is available in the development version of the `tourr` package. It will save the tour projections as an animated gif.
+
+```{r saving a tour as an animated fig using gganimate, eval=FALSE, echo=TRUE}
+library(gganimate)
+render_gif(flea[,1:6], grand_tour(), display_xy(axes="off"),
+           frames=200, 
+           gif_file="mytour.gif")
+```
+
+## Wrapping up
+
+```{r}
+rey <- image_read("images/rey.jpg")
+meme_text_top(rey, "Everyone gets top marks %>%!!!", gravity = "North", size=36)
+```
+
+`r nia("Plese provide feedback on the tutorial and suggestions for tools that you would like to see at:")` 
+
+[http://bit.ly/u19hdv](http://bit.ly/u19hdv)
+
+This form asks for your email, in case it would be helpful to get more input on suggestions. 
+
+### Workshop notes
+
+- https://github.com/dicook/useR2019_highd_vis
+- Interactive tutorial will be accessible through https://ebsmonash.shinyapps.io/tutorial_highd_vis/
+- It is shared with a creative commons license. Feel free to use the material it is is useful. You need to also use the same license. 
+
+### Where to go to find out more
+
+An incomplete list, a few of my favourites:
+
+- Visualisation
+    - [ggplot2](https://ggplot2.tidyverse.org)
+    - Grolemund and Wickham [R for Data Science](https://r4ds.had.co.nz)
+    - Healy [Data Visualization](https://kieranhealy.org/publications/dataviz/)
+    - Unwin [Graphical Data Analysis with R](http://www.gradaanwr.net)
+    - Chang [R Graphics Cookbook](https://r-graphics.org)
+    - Naomi Robbins [Creating More Effective Graphs](https://www.nbr-graphs.com)
+    - Cleveland [Visual Hierarchy](https://www.jstor.org/stable/2981473?seq=1#page_scan_tab_contents)
+    - Heer and Bostock [Assessing Visualization Design](http://vis.stanford.edu/files/2010-MTurk-CHI.pdf)
+    - Wagemans et al (2012) A Century of Gestalt Psychology in Visual Perception [1](https://www.ncbi.nlm.nih.gov/pubmed/22845751) [2](https://pdfs.semanticscholar.org/d039/2810748bb362bb4d16a40477b7220962c22f.pdf)
+
+- Tours
+    - [Natalia da Silva](http://natydasilva.com/) [PPForest](https://cran.r-project.org/web/packages/PPforest/index.html) and [shiny app](https://natydasilva.shinyapps.io/shinyV03/).
+    - Eunkyung Lee [PPtreeViz](https://www.jstatsoft.org/article/view/v083i08)
+    - Wickham, Cook, Hofmann (2015) [Visualising Statistical Models: Removing the blindfold](http://dicook.org/publication/blindfold_2015/)
+    - Cook and Swayne (2007) [Interactive and Dynamic Graphics for Data Analysis](http://ggobi.org/book/)
+    - Wickham et al (2011) [tourr: An R Package for Exploring Multivariate Data with Projections](https://www.jstatsoft.org/article/view/v040i02/v40i02.pdf) and the R package [tourr](https://cran.r-project.org/web/packages/tourr/index.html)
+    - Schloerke et al (2016) [Escape from Boxland](https://journal.r-project.org/archive/2016/RJ-2016-044/index.html), [the web site zoo](http://schloerke.com/geozoo/) and the R package [geozoo](https://cran.r-project.org/web/packages/geozoo/index.html)
+
+## Share and share alike
+
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+
